@@ -1,6 +1,8 @@
-# Bikes API: Automacao, Observabilidade e DevSecOps
+# Bikes API: automacao, observabilidade e DevSecOps
 
-API Java Spring Boot com build, metricas, dashboards e logs centralizados.
+API Java com Spring Boot. O foco do teste funcional descrito aqui e a atualizacao
+de senha de usuario; o projeto tambem sobe uma infraestrutura de banco,
+monitoramento e centralizacao de logs para a materia de infraestrutura.
 
 ## Stack
 
@@ -11,13 +13,87 @@ API Java Spring Boot com build, metricas, dashboards e logs centralizados.
 - Graylog + MongoDB + OpenSearch
 - GitHub Actions publicando no GHCR
 
-## Execucao local
+## Subir o sistema
 
-Pre-requisitos: Docker Engine com Compose v2 e 4 GB de memoria disponivel.
+Pre-requisitos: Docker Engine com Docker Compose v2 e aproximadamente 4 GB de
+memoria disponivel. Na raiz do projeto, execute:
 
 ```bash
 docker compose up --build
 ```
+
+O primeiro build pode levar alguns minutos. Aguarde a inicializacao dos
+containers e confirme que a API esta respondendo em
+http://localhost:8080/actuator/health antes de enviar requisicoes.
+
+## Testar atualizacao de senha (Spring Boot)
+
+As requisicoes podem ser feitas pelo Postman ou pelo Swagger UI em
+http://localhost:8080/docs-bikes.html. No Postman, use o header
+`Content-Type: application/json` nos requests que enviam body.
+
+### 1. Criar um usuario para o teste
+
+Envie esta requisicao para criar um usuario. A senha precisa ter exatamente
+6 caracteres. Se ja existir um usuario com esse e-mail, escolha outro.
+
+```http
+POST http://localhost:8080/api/v1/usuarios
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "teste@example.com",
+  "password": "abc123"
+}
+```
+
+A resposta esperada e `201 Created`. Anote o `id` retornado; ele sera usado
+nas proximas requisicoes.
+
+### 2. Atualizar a senha
+
+Substitua `{id}` pelo identificador recebido ao criar o usuario.
+
+```http
+PATCH http://localhost:8080/api/v1/usuarios/{id}
+Content-Type: application/json
+```
+
+```json
+{
+  "senhaAtual": "abc123",
+  "novaSenha": "def456",
+  "confirmarSenha": "def456"
+}
+```
+
+Se a senha atual estiver correta e a nova senha for igual a confirmacao, a API
+retorna `204 No Content`. Uma resposta sem body e o comportamento esperado para
+esse status.
+
+### 3. Confirmar a alteracao
+
+Tente atualizar novamente usando a senha antiga como `senhaAtual`. A API deve
+retornar `400 Bad Request`, indicando que a senha atual nao confere. Em seguida,
+envie outro `PATCH` com `"senhaAtual": "def456"` para confirmar que a nova senha
+foi aceita. Esse ultimo request tambem atualiza a senha; escolha uma nova senha
+de 6 caracteres para `novaSenha` e `confirmarSenha`.
+
+Outros resultados que podem ser demonstrados:
+
+- Senhas novas diferentes entre si: `400 Bad Request`.
+- ID de usuario inexistente: `404 Not Found`.
+- Campo ausente ou senha com tamanho diferente de 6: `422 Unprocessable Content`.
+
+O recurso `GET /api/v1/usuarios/{id}` retorna o usuario, mas nao expoe a senha;
+por isso a verificacao e feita tentando usar a senha antiga e depois a nova
+como senha atual.
+
+## Servicos de infraestrutura
+
+O Compose inicia a API e seus servicos de suporte:
 
 | Servico | URL | Credenciais |
 | --- | --- | --- |
@@ -28,11 +104,25 @@ docker compose up --build
 | Grafana | http://localhost:3000 | admin / admin |
 | Graylog | http://localhost:9000 | admin / admin |
 
-O servico `graylog-init` cria a entrada GELF UDP na porta `12201` automaticamente. A API envia logs estruturados para ela e tambem os imprime no console do container.
+O MySQL e usado pela API para persistencia. O servico `graylog-init` cria
+automaticamente a entrada GELF UDP na porta `12201`; a API envia logs
+estruturados para o Graylog e tambem os imprime no console do container.
+
+Para acompanhar o estado dos containers, use outro terminal na raiz do projeto:
 
 ```bash
-docker compose down -v
+docker compose ps
 ```
+
+Para parar os containers sem apagar os dados persistidos:
+
+```bash
+docker compose down
+```
+
+`docker compose down -v` tambem remove os volumes, inclusive os dados do MySQL,
+Grafana, Prometheus, MongoDB e OpenSearch. Use essa opcao somente se quiser
+apagar os dados locais.
 
 ## Pipeline CI/CD
 
